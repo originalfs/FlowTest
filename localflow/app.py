@@ -25,7 +25,11 @@ except ImportError:
 class App:
     def __init__(self, cfg: Config) -> None:
         self.cfg = cfg
-        self.recorder = Recorder(sample_rate=cfg.sample_rate)
+        self.overlay = None
+        self.recorder = Recorder(
+            sample_rate=cfg.sample_rate,
+            on_level=lambda level: self.overlay.push_level(level) if self.overlay else None,
+        )
         self.transcriber = Transcriber(
             model=cfg.model,
             device=cfg.device,
@@ -34,7 +38,6 @@ class App:
         )
         self._started_at = 0.0
         self._busy = threading.Lock()
-        self.overlay = None
 
     # -- hotkey edges ------------------------------------------------------
 

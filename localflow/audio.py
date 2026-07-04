@@ -3,13 +3,34 @@
 from __future__ import annotations
 
 import threading
+from typing import Callable
+
+# Typical speech RMS on a float32 mic stream is roughly 0.01-0.15; this gain
+# maps that range onto ~0..1 so the waveform overlay has visible motion for
+# normal speaking volume without needing per-mic calibration.
+_LEVEL_GAIN = 8.0
+
+
+def _rms_level(chunk, gain: float = _LEVEL_GAIN) -> float:
+    """Root-mean-square amplitude of an audio chunk, scaled and clamped to [0, 1]."""
+    import numpy as np
+
+    if chunk.size == 0:
+        return 0.0
+    rms = float(np.sqrt(np.mean(np.square(chunk, dtype="float64"))))
+    return max(0.0, min(1.0, rms * gain))
 
 
 class Recorder:
     """Start/stop microphone recording; returns the captured audio as a numpy array."""
 
-    def __init__(self, sample_rate: int = 16000) -> None:
+    def __init__(
+        self,
+        sample_rate: int = 16000,
+        on_level: Callable[[float], None] | None = None,
+    ) -> None:
         self.sample_rate = sample_rate
+        self.on_level = on_level
         self._frames: list = []
         self._stream = None
         self._lock = threading.Lock()
@@ -28,6 +49,8 @@ class Recorder:
         def callback(indata, frames, time_info, status) -> None:
             with self._lock:
                 self._frames.append(indata.copy())
+            if self.on_level is not None:
+                self.on_level(_rms_level(indata))
 
         self._stream = sd.InputStream(
             samplerate=self.sample_rate,

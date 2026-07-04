@@ -83,11 +83,12 @@ localflow init                 # write the default config file for editing
 - **dictionary** — spoken form → written form, applied case-insensitively on
   word boundaries. Use it for names, jargon, and casing (like Wispr Flow's
   personal dictionary).
-- **show_overlay** — a small always-on-top pill in the corner of the screen
-  that appears while recording (red) and processing (amber), so you can see
-  LocalFlow is listening without keeping a console window in view. Needs
-  Tkinter (bundled with the python.org Windows installer); silently disabled
-  with a one-line notice if it isn't available.
+- **show_overlay** — an always-on-top animated waveform at the bottom-center
+  of the screen, so you can see LocalFlow is listening without keeping a
+  console window in view: teal bars react to your live mic volume while
+  recording, amber bars pulse gently while transcribing, and it's invisible
+  the rest of the time. Needs Tkinter (bundled with the python.org Windows
+  installer); silently disabled with a one-line notice if it isn't available.
 
 ### OS permissions
 
