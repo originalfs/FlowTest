@@ -54,6 +54,9 @@ class Config:
     # Personal dictionary: spoken form -> written form, e.g. {"local flow": "LocalFlow"}.
     dictionary: dict[str, str] = field(default_factory=dict)
     save_history: bool = True
+    # Small always-on-top indicator while recording/processing (needs Tkinter;
+    # silently disabled if unavailable).
+    show_overlay: bool = True
 
     def validate(self) -> None:
         if self.mode not in VALID_MODES:

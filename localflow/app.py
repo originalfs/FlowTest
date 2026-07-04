@@ -14,6 +14,13 @@ from .hotkey import HotkeyListener
 from .inject import inject_text
 from .transcriber import Transcriber
 
+try:
+    import tkinter  # noqa: F401
+
+    _OVERLAY_SUPPORTED = True
+except ImportError:
+    _OVERLAY_SUPPORTED = False
+
 
 class App:
     def __init__(self, cfg: Config) -> None:
@@ -27,6 +34,7 @@ class App:
         )
         self._started_at = 0.0
         self._busy = threading.Lock()
+        self.overlay = None
 
     # -- hotkey edges ------------------------------------------------------
 
@@ -45,6 +53,8 @@ class App:
     def _start(self) -> None:
         self.recorder.start()
         self._started_at = time.monotonic()
+        if self.overlay is not None:
+            self.overlay.show_recording()
         print("● recording... (release to transcribe)" if self.cfg.mode == "push_to_talk"
               else "● recording... (press hotkey again to stop)", flush=True)
 
@@ -59,22 +69,30 @@ class App:
     def _process(self, audio, duration: float) -> None:
         if len(audio) < self.cfg.sample_rate // 10:  # < 0.1s: accidental tap
             print("(too short, ignored)", flush=True)
+            if self.overlay is not None:
+                self.overlay.hide()
             return
         with self._busy:
-            raw = self.transcriber.transcribe(audio)
-            if not raw:
-                print("(no speech detected)", flush=True)
-                return
-            text = clean(
-                raw,
-                remove_filler_words=self.cfg.remove_fillers,
-                dictionary=self.cfg.dictionary,
-                capitalize=self.cfg.capitalize_sentences,
-            )
-            inject_text(text, method=self.cfg.injection)
-            print(f"→ {text}", flush=True)
-            if self.cfg.save_history:
-                history.record(raw=raw, cleaned=text, duration_seconds=duration)
+            try:
+                if self.overlay is not None:
+                    self.overlay.show_processing()
+                raw = self.transcriber.transcribe(audio)
+                if not raw:
+                    print("(no speech detected)", flush=True)
+                    return
+                text = clean(
+                    raw,
+                    remove_filler_words=self.cfg.remove_fillers,
+                    dictionary=self.cfg.dictionary,
+                    capitalize=self.cfg.capitalize_sentences,
+                )
+                inject_text(text, method=self.cfg.injection)
+                print(f"→ {text}", flush=True)
+                if self.cfg.save_history:
+                    history.record(raw=raw, cleaned=text, duration_seconds=duration)
+            finally:
+                if self.overlay is not None:
+                    self.overlay.hide()
 
     # -- entry point -------------------------------------------------------
 
@@ -89,6 +107,24 @@ class App:
             on_activate=self._on_activate,
             on_deactivate=self._on_deactivate,
         )
+
+        if not (self.cfg.show_overlay and _OVERLAY_SUPPORTED):
+            if self.cfg.show_overlay:
+                print("(visual overlay needs Tkinter, which isn't installed; skipping)")
+            self._run_listener(listener)
+            return
+
+        from .overlay import Overlay
+
+        self.overlay = Overlay()
+        threading.Thread(target=self._run_listener, args=(listener,), daemon=True).start()
+        try:
+            self.overlay.run()
+        except KeyboardInterrupt:
+            print("\nbye")
+            sys.exit(0)
+
+    def _run_listener(self, listener: HotkeyListener) -> None:
         try:
             listener.run()
         except KeyboardInterrupt:
