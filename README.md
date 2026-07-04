@@ -40,6 +40,10 @@ localflow download   # one-time: cache the Whisper model, then you can go offlin
 localflow            # start dictating: hold ctrl+alt+space, speak, release
 ```
 
+**Windows**: double-click `start.bat` (or run it from cmd) instead of the above —
+it activates the venv, puts the CUDA DLLs on `PATH`, and launches `localflow`
+in one step.
+
 Other commands:
 
 ```bash
