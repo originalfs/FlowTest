@@ -3,7 +3,7 @@ import queue
 
 import pytest
 
-from localflow.overlay import WAVE_POINTS, Overlay, _clamp01
+from localflow.overlay import WAVE_POINTS, Overlay, _clamp01, _hex_to_rgb, _lerp_color
 
 
 class TestClamp:
@@ -12,6 +12,27 @@ class TestClamp:
     )
     def test_clamp01(self, value, expected):
         assert _clamp01(value) == expected
+
+
+class TestColorHelpers:
+    def test_hex_to_rgb(self):
+        assert _hex_to_rgb("#22d3ee") == (0x22, 0xD3, 0xEE)
+
+    def test_hex_to_rgb_without_hash(self):
+        assert _hex_to_rgb("6366f1") == (0x63, 0x66, 0xF1)
+
+    def test_lerp_at_endpoints(self):
+        c1, c2 = (0, 0, 0), (255, 200, 100)
+        assert _lerp_color(c1, c2, 0.0) == c1
+        assert _lerp_color(c1, c2, 1.0) == c2
+
+    def test_lerp_midpoint(self):
+        assert _lerp_color((0, 0, 0), (200, 100, 50), 0.5) == (100, 50, 25)
+
+    def test_lerp_clamps_t(self):
+        c1, c2 = (0, 0, 0), (100, 100, 100)
+        assert _lerp_color(c1, c2, -1) == c1
+        assert _lerp_color(c1, c2, 2) == c2
 
 
 class TestQueueing:
