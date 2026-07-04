@@ -74,6 +74,11 @@ class Transcriber:
             language=self.language,
             vad_filter=True,
             beam_size=5,
+            # Each dictation is a short, standalone utterance, not a running
+            # transcript. Conditioning on prior segment text encourages Whisper
+            # to hallucinate trailing content (e.g. from end-of-clip silence
+            # or breath noise) that continues a "conversation" that isn't real.
+            condition_on_previous_text=False,
         )
         return " ".join(seg.text.strip() for seg in segments).strip()
 
