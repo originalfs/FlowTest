@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import math
 import threading
 from typing import Callable
 
-# Typical speech RMS on a float32 mic stream is roughly 0.01-0.15; this gain
-# maps that range onto ~0..1 so the waveform overlay has visible motion for
-# normal speaking volume without needing per-mic calibration.
-_LEVEL_GAIN = 8.0
+# Typical speech RMS on a float32 mic stream is roughly 0.01-0.1 -- too small
+# a range for a linear gain to look lively. A sqrt (roughly perceptual/dB-like)
+# mapping spreads normal speaking volume across most of 0..1 instead of
+# hugging the bottom of the range, which is what made the waveform look flat.
+_LEVEL_GAIN = 3.2
 
 
 def _rms_level(chunk, gain: float = _LEVEL_GAIN) -> float:
@@ -18,7 +20,7 @@ def _rms_level(chunk, gain: float = _LEVEL_GAIN) -> float:
     if chunk.size == 0:
         return 0.0
     rms = float(np.sqrt(np.mean(np.square(chunk, dtype="float64"))))
-    return max(0.0, min(1.0, rms * gain))
+    return max(0.0, min(1.0, math.sqrt(rms) * gain))
 
 
 class Recorder:

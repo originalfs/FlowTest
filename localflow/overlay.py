@@ -2,28 +2,34 @@
 
 Uses Tkinter (Python's stdlib GUI toolkit, no extra dependency needed) so
 you can see LocalFlow is listening without keeping a console window in
-view. A borderless equalizer-style waveform floats at the bottom-center of
-the screen: teal bars react to your live mic volume while recording, amber
-bars pulse gently while the model is transcribing, and it's invisible the
-rest of the time.
+view. A single smooth, filled waveform shape floats at the bottom-center of
+the screen: teal while recording, tracking your live mic volume with a
+scrolling amplitude trace; amber while transcribing, with a gentle idle
+pulse; invisible the rest of the time.
 """
 
 from __future__ import annotations
 
 import math
 import queue
-import random
 
-BAR_COUNT = 24
+WAVE_POINTS = 48
 
 _COLORS = {
     "recording": "#4fd1c5",
     "processing": "#f5a623",
 }
-# Background/key color: made transparent on Windows so only the bars are
+# Background/key color: made transparent on Windows so only the waveform is
 # visible, floating over whatever's on screen. Falls back to a faint solid
 # background on platforms without -transparentcolor support.
 _KEY_COLOR = "#010101"
+
+# Smoothing: quick to rise when you start talking, slower to fall afterwards,
+# like a real VU meter -- this is what makes the trace look alive rather
+# than jittery or, if too slow, flat.
+_ATTACK = 0.55
+_RELEASE = 0.12
+_IDLE_FLOOR = 0.035
 
 
 def _clamp01(value: float) -> float:
@@ -36,16 +42,18 @@ class Overlay:
     Tkinter's mainloop, so it must be called from the main thread.
     """
 
-    def __init__(self, width: int = 300, height: int = 64, bottom_margin: int = 70) -> None:
+    def __init__(self, width: int = 340, height: int = 90, bottom_margin: int = 70) -> None:
         self.width = width
         self.height = height
         self.bottom_margin = bottom_margin
         self._queue: "queue.Queue[tuple[str, object]]" = queue.Queue()
         self._root = None
         self._canvas = None
-        self._bar_ids: list[int] = []
+        self._poly_id = None
         self._state = "idle"
         self._level = 0.0
+        self._smoothed = 0.0
+        self._history = [0.0] * WAVE_POINTS
         self._phase = 0.0
 
     # -- public, thread-safe API --------------------------------------------
@@ -90,38 +98,49 @@ class Overlay:
             self._root.attributes("-topmost", True)
 
     def _heights(self) -> list[float]:
-        """Bar heights in [0, 1] for the current animation frame."""
+        """Amplitude in [0, 1] for each point of the current animation frame."""
         if self._state == "recording":
-            base = max(0.08, self._level)
-            return [_clamp01(base * random.uniform(0.5, 1.15)) for _ in range(BAR_COUNT)]
+            target = max(_IDLE_FLOOR, self._level)
+            rate = _ATTACK if target > self._smoothed else _RELEASE
+            self._smoothed += (target - self._smoothed) * rate
+            self._history.append(_clamp01(self._smoothed))
+            self._history.pop(0)
+            return list(self._history)
         if self._state == "processing":
             return [
-                0.15 + 0.5 * (0.5 + 0.5 * math.sin(self._phase + i * 0.5))
-                for i in range(BAR_COUNT)
+                0.15 + 0.35 * (0.5 + 0.5 * math.sin(self._phase + i * 0.35))
+                for i in range(WAVE_POINTS)
             ]
-        return [0.0] * BAR_COUNT
+        return [0.0] * WAVE_POINTS
 
     # -- Tk-dependent rendering ----------------------------------------------
 
     def _redraw(self) -> None:
         color = _COLORS.get(self._state, _COLORS["recording"])
-        bar_width = self.width / (BAR_COUNT * 1.6)
-        gap = bar_width * 0.6
-        total = BAR_COUNT * bar_width + (BAR_COUNT - 1) * gap
-        x = (self.width - total) / 2
+        heights = self._heights()
+        n = len(heights)
         mid_y = self.height / 2
-        for i, h in enumerate(self._heights()):
-            bar_h = max(4, h * (self.height - 12))
-            self._canvas.coords(
-                self._bar_ids[i], x, mid_y - bar_h / 2, x + bar_width, mid_y + bar_h / 2
+        step = self.width / (n - 1)
+        usable_half = self.height / 2 - 6
+
+        coords: list[float] = []
+        for i, h in enumerate(heights):
+            coords.extend((i * step, mid_y - max(2.0, h * usable_half)))
+        for i, h in enumerate(reversed(heights)):
+            coords.extend(((n - 1 - i) * step, mid_y + max(2.0, h * usable_half)))
+
+        if self._poly_id is None:
+            self._poly_id = self._canvas.create_polygon(
+                coords, smooth=True, splinesteps=16, fill=color, outline=""
             )
-            self._canvas.itemconfig(self._bar_ids[i], fill=color)
-            x += bar_width + gap
+        else:
+            self._canvas.coords(self._poly_id, *coords)
+            self._canvas.itemconfig(self._poly_id, fill=color)
 
     def _tick(self) -> None:
         self._drain_queue()
         if self._state != "idle":
-            self._phase += 0.25
+            self._phase += 0.2
             self._redraw()
         # Re-arming every ~33ms also lets Ctrl+C interrupt the mainloop
         # promptly, since Tkinter otherwise never yields to the interpreter.
@@ -153,12 +172,6 @@ class Overlay:
             root, width=self.width, height=self.height, bg=_KEY_COLOR, highlightthickness=0
         )
         canvas.pack(fill="both", expand=True)
-
-        bar_width = self.width / (BAR_COUNT * 1.6)
-        for _ in range(BAR_COUNT):
-            self._bar_ids.append(
-                canvas.create_rectangle(0, 0, bar_width, 4, fill=_COLORS["recording"], width=0)
-            )
 
         self._root = root
         self._canvas = canvas

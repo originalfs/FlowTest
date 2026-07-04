@@ -3,7 +3,7 @@ import queue
 
 import pytest
 
-from localflow.overlay import BAR_COUNT, Overlay, _clamp01
+from localflow.overlay import WAVE_POINTS, Overlay, _clamp01
 
 
 class TestClamp:
@@ -98,33 +98,52 @@ class TestHeights:
     def test_idle_is_all_zero(self):
         o = Overlay()
         o._state = "idle"
-        assert o._heights() == [0.0] * BAR_COUNT
+        assert o._heights() == [0.0] * WAVE_POINTS
 
-    def test_recording_reacts_to_level(self, monkeypatch):
-        monkeypatch.setattr("random.uniform", lambda a, b: 1.0)
+    def test_recording_length_matches_wave_points(self):
         o = Overlay()
         o._state = "recording"
         o._level = 0.5
-        heights = o._heights()
-        assert len(heights) == BAR_COUNT
-        assert all(h == pytest.approx(0.5) for h in heights)
+        assert len(o._heights()) == WAVE_POINTS
 
-    def test_recording_has_a_silence_floor(self, monkeypatch):
-        monkeypatch.setattr("random.uniform", lambda a, b: 1.0)
+    def test_recording_rises_toward_loud_level(self):
+        o = Overlay()
+        o._state = "recording"
+        o._level = 0.9
+        for _ in range(30):
+            heights = o._heights()
+        assert heights[-1] == pytest.approx(0.9, abs=0.02)
+
+    def test_recording_has_a_silence_floor_not_flat_zero(self):
         o = Overlay()
         o._state = "recording"
         o._level = 0.0
-        assert all(h == pytest.approx(0.08) for h in o._heights())
+        for _ in range(30):
+            heights = o._heights()
+        assert heights[-1] > 0.0
+
+    def test_recording_scrolls_history(self):
+        o = Overlay()
+        o._state = "recording"
+        o._level = 0.0
+        for _ in range(30):
+            o._heights()
+        o._level = 1.0
+        first = o._heights()
+        second = o._heights()
+        # A rising level should push the trailing edge of the trace up over
+        # successive frames rather than jumping or staying static.
+        assert second[-1] > first[-1]
 
     def test_processing_oscillates_with_phase(self):
         o = Overlay()
         o._state = "processing"
         o._phase = 0.0
-        expected0 = 0.15 + 0.5 * (0.5 + 0.5 * math.sin(0.0))
+        expected0 = 0.15 + 0.35 * (0.5 + 0.5 * math.sin(0.0))
         assert o._heights()[0] == pytest.approx(expected0)
 
         o._phase = 1.0
-        expected1 = 0.15 + 0.5 * (0.5 + 0.5 * math.sin(1.0))
+        expected1 = 0.15 + 0.35 * (0.5 + 0.5 * math.sin(1.0))
         assert o._heights()[0] == pytest.approx(expected1)
 
     def test_processing_heights_stay_in_range(self):

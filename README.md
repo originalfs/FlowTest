@@ -85,8 +85,9 @@ localflow init                 # write the default config file for editing
   personal dictionary).
 - **show_overlay** — an always-on-top animated waveform at the bottom-center
   of the screen, so you can see LocalFlow is listening without keeping a
-  console window in view: teal bars react to your live mic volume while
-  recording, amber bars pulse gently while transcribing, and it's invisible
+  console window in view: a single smooth, filled teal trace tracks your
+  live mic volume while recording (quick to rise, gentle to fall, like a VU
+  meter), turns amber and pulses gently while transcribing, and is invisible
   the rest of the time. Needs Tkinter (bundled with the python.org Windows
   installer); silently disabled with a one-line notice if it isn't available.
 
