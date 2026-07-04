@@ -83,15 +83,17 @@ localflow init                 # write the default config file for editing
 - **dictionary** — spoken form → written form, applied case-insensitively on
   word boundaries. Use it for names, jargon, and casing (like Wispr Flow's
   personal dictionary).
-- **show_overlay** — an always-on-top animated waveform at the bottom-center
-  of the screen, so you can see LocalFlow is listening without keeping a
-  console window in view. Each frame is rendered with Pillow: a smooth,
-  cyan-to-indigo gradient-filled trace with a soft glow tracks your live mic
-  volume while recording (quick to rise, gentle to fall, like a VU meter),
-  turns amber-to-red and pulses gently while transcribing, and is invisible
-  the rest of the time. Needs Tkinter (bundled with the python.org Windows
-  installer) and Pillow (installed automatically via `pip install -e .`);
-  silently disabled with a one-line notice if Tkinter isn't available.
+- **show_overlay** — a compact frosted-glass pill anchored bottom-center of
+  the screen (modeled on how Wispr Flow/Muesli/WisprType actually do this),
+  so you can see LocalFlow is listening without keeping a console window in
+  view. Each frame is rendered with Pillow: a dark rounded glass panel with
+  a soft drop shadow, holding a smooth gradient waveform whose glow bleeds
+  gently past the panel edge — cyan-to-indigo and tracking your live mic
+  volume while recording, amber-to-red with a gentle idle pulse while
+  transcribing, invisible the rest of the time. Needs Tkinter (bundled with
+  the python.org Windows installer) and Pillow (installed automatically via
+  `pip install -e .`); silently disabled with a one-line notice if Tkinter
+  isn't available.
 
 ### OS permissions
 

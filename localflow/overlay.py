@@ -1,12 +1,17 @@
-"""Always-on-top animated waveform indicator for recording/processing state.
+"""Always-on-top dictation indicator: a compact frosted-glass pill.
 
-Plain Tkinter canvas primitives can't do gradients, glow, or anti-aliased
-curves, so each frame is rendered with Pillow instead: a smooth mirrored
-waveform, filled with a left-to-right color gradient, sitting on a soft
-blurred glow of the same hue, supersampled and downscaled for smooth edges.
-The result is blitted onto a borderless, click-through, always-on-top
-Tkinter window. Teal/indigo while recording (tracking your live mic volume),
-amber/red while transcribing (a gentle idle pulse), invisible otherwise.
+Modeled on how Wispr Flow, Muesli, and WisprType actually do this (compact
+capsule anchored bottom-center, dark glass panel, glowing accent waveform)
+rather than a bare colored shape floating in space -- the panel is what
+makes it read as a deliberate app widget instead of an abstract blob.
+
+Each frame is composed with Pillow at supersampled resolution (plain
+Tkinter canvas can't do gradients, blur, or anti-aliasing): a drop shadow,
+a dark rounded-rect glass panel with a subtle outline, and inside it a
+smooth mirrored waveform filled with a color gradient whose glow bleeds
+softly beyond the panel edge. Teal/indigo while recording (tracking your
+live mic volume), amber/red while transcribing (a gentle idle pulse),
+invisible the rest of the time.
 """
 
 from __future__ import annotations
@@ -17,13 +22,15 @@ import queue
 WAVE_POINTS = 64
 SUPERSAMPLE = 2
 
-# Left-to-right gradient endpoints per state.
+# Left-to-right gradient endpoints per state, for the waveform accent.
 _GRADIENTS = {
-    "recording": ("#22d3ee", "#6366f1"),
-    "processing": ("#f59e0b", "#ef4444"),
+    "recording": ("#22d3ee", "#818cf8"),
+    "processing": ("#fbbf24", "#f87171"),
 }
+_PANEL_COLOR = "#17161f"
+_PANEL_OUTLINE = "#3a3846"
 # Chroma-key color made transparent on Windows via -transparentcolor; picked
-# far from every gradient hue above so anti-aliased edges never misfire.
+# far from every hue above so anti-aliased edges never misfire.
 _KEY_COLOR = "#fe00fe"
 
 # Smoothing: quick to rise when you start talking, slower to fall afterwards,
@@ -54,16 +61,25 @@ class Overlay:
     Tkinter's mainloop, so it must be called from the main thread.
     """
 
-    def __init__(self, width: int = 360, height: int = 100, bottom_margin: int = 70) -> None:
+    def __init__(
+        self,
+        width: int = 320,
+        height: int = 150,
+        bottom_margin: int = 90,
+        pill_width: int = 220,
+        pill_height: int = 60,
+    ) -> None:
         self.width = width
         self.height = height
         self.bottom_margin = bottom_margin
+        self.pill_width = pill_width
+        self.pill_height = pill_height
         self._queue: "queue.Queue[tuple[str, object]]" = queue.Queue()
         self._root = None
         self._canvas = None
         self._image_id = None
         self._photo = None  # keep a reference: Tkinter won't hold one for you
-        self._gradient_cache: dict[str, "object"] = {}
+        self._gradient_cache: dict[tuple, "object"] = {}
         self._state = "idle"
         self._level = 0.0
         self._smoothed = 0.0
@@ -130,7 +146,7 @@ class Overlay:
     # -- Pillow-rendered frame -----------------------------------------------
 
     def _gradient_image(self, state: str, w: int, h: int):
-        """A full-size left-to-right gradient image, cached per state/size."""
+        """A full-frame left-to-right gradient image, cached per state/size."""
         cache_key = (state, w, h)
         cached = self._gradient_cache.get(cache_key)
         if cached is not None:
@@ -149,21 +165,26 @@ class Overlay:
         self._gradient_cache[cache_key] = image
         return image
 
-    def _wave_mask(self, w: int, h: int):
-        """Alpha mask (L mode) of the filled, mirrored waveform shape."""
+    def _wave_mask(self, w: int, h: int, box: tuple[float, float, float, float]):
+        """Full-frame (w, h) alpha mask of the waveform, confined to `box`
+        (left, top, right, bottom) so it stays inside the glass panel and
+        never crosses into the pill's rounded end-caps.
+        """
         from PIL import Image, ImageDraw
 
+        left, top, right, bottom = box
         heights = self._heights()
         n = len(heights)
-        mid_y = h / 2
-        step = w / (n - 1)
-        usable_half = h / 2 - 6 * SUPERSAMPLE
+        mid_y = (top + bottom) / 2
+        span = right - left
+        step = span / (n - 1)
+        usable_half = (bottom - top) / 2
 
         top_pts = []
         bottom_pts = []
         for i, amp in enumerate(heights):
-            x = i * step
-            half = max(2.0 * SUPERSAMPLE, amp * usable_half)
+            x = left + i * step
+            half = max(1.5 * SUPERSAMPLE, amp * usable_half)
             top_pts.append((x, mid_y - half))
             bottom_pts.append((x, mid_y + half))
         polygon = top_pts + list(reversed(bottom_pts))
@@ -173,20 +194,53 @@ class Overlay:
         return mask
 
     def _render_frame(self):
-        """Build one anti-aliased, gradient-filled, glowing waveform frame."""
-        from PIL import Image, ImageFilter
+        """Compose one frame: shadow, glass pill, glow, waveform."""
+        from PIL import Image, ImageDraw, ImageFilter
 
-        w, h = self.width * SUPERSAMPLE, self.height * SUPERSAMPLE
+        s = SUPERSAMPLE
+        w, h = self.width * s, self.height * s
+        pw, ph = self.pill_width * s, self.pill_height * s
+        radius = ph / 2
         key_rgb = _hex_to_rgb(_KEY_COLOR)
+
+        px0 = (w - pw) / 2
+        py0 = (h - ph) / 2 - 6 * s
+        px1, py1 = px0 + pw, py0 + ph
+        pill_box = (px0, py0, px1, py1)
+
         base = Image.new("RGB", (w, h), key_rgb)
 
-        mask = self._wave_mask(w, h)
-        gradient = self._gradient_image(self._state, w, h)
+        # -- drop shadow: soft, offset down, fading into the transparent key --
+        shadow_mask = Image.new("L", (w, h), 0)
+        shadow_offset = 8 * s
+        ImageDraw.Draw(shadow_mask).rounded_rectangle(
+            (px0, py0 + shadow_offset, px1, py1 + shadow_offset), radius=radius, fill=140
+        )
+        shadow_mask = shadow_mask.filter(ImageFilter.GaussianBlur(radius=12 * s))
+        base = Image.composite(Image.new("RGB", (w, h), (0, 0, 0)), base, shadow_mask)
 
-        glow_mask = mask.filter(ImageFilter.GaussianBlur(radius=10 * SUPERSAMPLE))
-        glow_mask = glow_mask.point(lambda p: int(p * 0.6))
+        # -- waveform glow: unclipped, so it softly bleeds past the panel edge --
+        wave_box = (px0 + radius, py0 + 10 * s, px1 - radius, py1 - 10 * s)
+        wave_mask = self._wave_mask(w, h, wave_box)
+        gradient = self._gradient_image(self._state, w, h)
+        glow_mask = wave_mask.filter(ImageFilter.GaussianBlur(radius=9 * s)).point(
+            lambda p: int(p * 0.9)
+        )
         base = Image.composite(gradient, base, glow_mask)
-        base = Image.composite(gradient, base, mask)
+
+        # -- glass panel: dark rounded pill with a subtle outline --
+        panel_mask = Image.new("L", (w, h), 0)
+        ImageDraw.Draw(panel_mask).rounded_rectangle(pill_box, radius=radius, fill=255)
+        base = Image.composite(Image.new("RGB", (w, h), _hex_to_rgb(_PANEL_COLOR)), base, panel_mask)
+
+        outline = Image.new("L", (w, h), 0)
+        ImageDraw.Draw(outline).rounded_rectangle(
+            pill_box, radius=radius, outline=255, width=max(1, round(1.5 * s))
+        )
+        base = Image.composite(Image.new("RGB", (w, h), _hex_to_rgb(_PANEL_OUTLINE)), base, outline)
+
+        # -- waveform, sharp, clipped inside the panel --
+        base = Image.composite(gradient, base, wave_mask)
 
         return base.resize((self.width, self.height), Image.LANCZOS)
 
