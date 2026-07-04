@@ -87,13 +87,15 @@ localflow init                 # write the default config file for editing
   the screen (modeled on how Wispr Flow/Muesli/WisprType actually do this),
   so you can see LocalFlow is listening without keeping a console window in
   view. Each frame is rendered with Pillow: a dark rounded glass panel with
-  a soft drop shadow, holding a smooth gradient waveform whose glow bleeds
-  gently past the panel edge — cyan-to-indigo and tracking your live mic
-  volume while recording, amber-to-red with a gentle idle pulse while
-  transcribing, invisible the rest of the time. Needs Tkinter (bundled with
-  the python.org Windows installer) and Pillow (installed automatically via
-  `pip install -e .`); silently disabled with a one-line notice if Tkinter
-  isn't available.
+  a soft drop shadow, holding a classic rounded-capsule equalizer waveform
+  (the same visual language as WhatsApp/Slack/Voice Memos) whose glow bleeds
+  gently past the panel edge. The bars move as one coherent trace, driven by
+  a smoothed, scrolling history of your actual mic level rather than
+  jittering independently — cyan-to-indigo while recording, amber-to-red
+  with a gentle idle pulse while transcribing, invisible the rest of the
+  time. Needs Tkinter (bundled with the python.org Windows installer) and
+  Pillow (installed automatically via `pip install -e .`); silently
+  disabled with a one-line notice if Tkinter isn't available.
 
 ### OS permissions
 

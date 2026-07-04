@@ -3,7 +3,7 @@ import queue
 
 import pytest
 
-from localflow.overlay import WAVE_POINTS, Overlay, _clamp01, _hex_to_rgb, _lerp_color
+from localflow.overlay import BAR_COUNT, Overlay, _clamp01, _hex_to_rgb, _lerp_color
 
 
 class TestClamp:
@@ -119,13 +119,13 @@ class TestHeights:
     def test_idle_is_all_zero(self):
         o = Overlay()
         o._state = "idle"
-        assert o._heights() == [0.0] * WAVE_POINTS
+        assert o._heights() == [0.0] * BAR_COUNT
 
     def test_recording_length_matches_wave_points(self):
         o = Overlay()
         o._state = "recording"
         o._level = 0.5
-        assert len(o._heights()) == WAVE_POINTS
+        assert len(o._heights()) == BAR_COUNT
 
     def test_recording_rises_toward_loud_level(self):
         o = Overlay()

@@ -8,10 +8,13 @@ makes it read as a deliberate app widget instead of an abstract blob.
 Each frame is composed with Pillow at supersampled resolution (plain
 Tkinter canvas can't do gradients, blur, or anti-aliasing): a drop shadow,
 a dark rounded-rect glass panel with a subtle outline, and inside it a
-smooth mirrored waveform filled with a color gradient whose glow bleeds
-softly beyond the panel edge. Teal/indigo while recording (tracking your
-live mic volume), amber/red while transcribing (a gentle idle pulse),
-invisible the rest of the time.
+classic rounded-capsule equalizer waveform (the same visual language as
+WhatsApp/Slack/Voice Memos), filled with a color gradient whose glow
+bleeds softly beyond the panel edge. The bars move together as one
+coherent trace -- driven by a smoothed, scrolling history of your actual
+mic level -- rather than jittering independently. Teal/indigo while
+recording, amber/red while transcribing (a gentle idle pulse), invisible
+the rest of the time.
 """
 
 from __future__ import annotations
@@ -19,7 +22,7 @@ from __future__ import annotations
 import math
 import queue
 
-WAVE_POINTS = 64
+BAR_COUNT = 27
 SUPERSAMPLE = 2
 
 # Left-to-right gradient endpoints per state, for the waveform accent.
@@ -83,7 +86,7 @@ class Overlay:
         self._state = "idle"
         self._level = 0.0
         self._smoothed = 0.0
-        self._history = [0.0] * WAVE_POINTS
+        self._history = [0.0] * BAR_COUNT
         self._phase = 0.0
 
     # -- public, thread-safe API --------------------------------------------
@@ -139,9 +142,9 @@ class Overlay:
         if self._state == "processing":
             return [
                 0.15 + 0.35 * (0.5 + 0.5 * math.sin(self._phase + i * 0.35))
-                for i in range(WAVE_POINTS)
+                for i in range(BAR_COUNT)
             ]
-        return [0.0] * WAVE_POINTS
+        return [0.0] * BAR_COUNT
 
     # -- Pillow-rendered frame -----------------------------------------------
 
@@ -165,10 +168,10 @@ class Overlay:
         self._gradient_cache[cache_key] = image
         return image
 
-    def _wave_mask(self, w: int, h: int, box: tuple[float, float, float, float]):
-        """Full-frame (w, h) alpha mask of the waveform, confined to `box`
-        (left, top, right, bottom) so it stays inside the glass panel and
-        never crosses into the pill's rounded end-caps.
+    def _bars_mask(self, w: int, h: int, box: tuple[float, float, float, float]):
+        """Full-frame (w, h) alpha mask of rounded-capsule equalizer bars,
+        confined to `box` (left, top, right, bottom) so they stay inside the
+        glass panel and never cross into the pill's rounded end-caps.
         """
         from PIL import Image, ImageDraw
 
@@ -176,21 +179,22 @@ class Overlay:
         heights = self._heights()
         n = len(heights)
         mid_y = (top + bottom) / 2
-        span = right - left
-        step = span / (n - 1)
         usable_half = (bottom - top) / 2
+        span = right - left
 
-        top_pts = []
-        bottom_pts = []
-        for i, amp in enumerate(heights):
-            x = left + i * step
-            half = max(1.5 * SUPERSAMPLE, amp * usable_half)
-            top_pts.append((x, mid_y - half))
-            bottom_pts.append((x, mid_y + half))
-        polygon = top_pts + list(reversed(bottom_pts))
+        bar_width = span / (n * 1.7)
+        gap = bar_width * 0.7
+        total = n * bar_width + (n - 1) * gap
+        x = left + (span - total) / 2
 
         mask = Image.new("L", (w, h), 0)
-        ImageDraw.Draw(mask).polygon(polygon, fill=255)
+        draw = ImageDraw.Draw(mask)
+        for amp in heights:
+            bar_h = max(bar_width, amp * usable_half * 2)
+            y0, y1 = mid_y - bar_h / 2, mid_y + bar_h / 2
+            radius = min(bar_width, bar_h) / 2
+            draw.rounded_rectangle((x, y0, x + bar_width, y1), radius=radius, fill=255)
+            x += bar_width + gap
         return mask
 
     def _render_frame(self):
@@ -219,11 +223,11 @@ class Overlay:
         shadow_mask = shadow_mask.filter(ImageFilter.GaussianBlur(radius=12 * s))
         base = Image.composite(Image.new("RGB", (w, h), (0, 0, 0)), base, shadow_mask)
 
-        # -- waveform glow: unclipped, so it softly bleeds past the panel edge --
-        wave_box = (px0 + radius, py0 + 10 * s, px1 - radius, py1 - 10 * s)
-        wave_mask = self._wave_mask(w, h, wave_box)
+        # -- equalizer bars glow: unclipped, so it softly bleeds past the panel edge --
+        bars_box = (px0 + radius, py0 + 10 * s, px1 - radius, py1 - 10 * s)
+        bars_mask = self._bars_mask(w, h, bars_box)
         gradient = self._gradient_image(self._state, w, h)
-        glow_mask = wave_mask.filter(ImageFilter.GaussianBlur(radius=9 * s)).point(
+        glow_mask = bars_mask.filter(ImageFilter.GaussianBlur(radius=9 * s)).point(
             lambda p: int(p * 0.9)
         )
         base = Image.composite(gradient, base, glow_mask)
@@ -239,8 +243,8 @@ class Overlay:
         )
         base = Image.composite(Image.new("RGB", (w, h), _hex_to_rgb(_PANEL_OUTLINE)), base, outline)
 
-        # -- waveform, sharp, clipped inside the panel --
-        base = Image.composite(gradient, base, wave_mask)
+        # -- equalizer bars, sharp, clipped inside the panel --
+        base = Image.composite(gradient, base, bars_mask)
 
         return base.resize((self.width, self.height), Image.LANCZOS)
 
