@@ -85,6 +85,15 @@ localflow init                 # write the default config file for editing
   Monitoring* permissions (System Settings → Privacy & Security).
 - **Linux** — works on X11 out of the box; on Wayland, global key grabbing and
   injection depend on the compositor (X11/XWayland is the reliable path).
+- **Windows + GPU** — after `pip install nvidia-cublas-cu12 nvidia-cudnn-cu12`,
+  the CUDA DLLs live under `venv\Lib\site-packages\nvidia\*\bin` but aren't on
+  `PATH`, so `device: cuda` can fail with `Library cublas64_12.dll is not found
+  or cannot be loaded`. Either add those folders to `PATH` before running:
+  ```cmd
+  set PATH=%PATH%;%CD%\venv\Lib\site-packages\nvidia\cublas\bin;%CD%\venv\Lib\site-packages\nvidia\cudnn\bin
+  ```
+  or just ignore it — LocalFlow catches this specific error and automatically
+  falls back to CPU for the rest of the session (see `transcriber.py`).
 - **Windows** — no special setup.
 
 ## Privacy model
